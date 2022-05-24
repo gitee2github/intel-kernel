@@ -20,6 +20,8 @@ struct kvm_caps {
 	u64  default_tsc_scaling_ratio;
 	/* bus lock detection supported? */
 	bool has_bus_lock_exit;
+	/* notify VM exit supported? */
+	bool has_notify_vmexit;
 
 	u64 supported_mce_cap;
 	u64 supported_xcr0;
@@ -357,6 +359,11 @@ static inline bool kvm_cstate_in_guest(struct kvm *kvm)
 }
 
 DECLARE_PER_CPU(struct kvm_vcpu *, current_vcpu);
+
+static inline bool kvm_notify_vmexit_enabled(struct kvm *kvm)
+{
+	return kvm->arch.notify_vmexit_flags & KVM_X86_NOTIFY_VMEXIT_ENABLED;
+}
 
 static inline void kvm_before_interrupt(struct kvm_vcpu *vcpu)
 {
