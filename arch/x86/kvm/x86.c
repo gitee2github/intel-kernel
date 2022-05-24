@@ -85,8 +85,11 @@
 
 #define MAX_IO_MSRS 256
 #define KVM_MAX_MCE_BANKS 32
-u64 __read_mostly kvm_mce_cap_supported = MCG_CTL_P | MCG_SER_P;
-EXPORT_SYMBOL_GPL(kvm_mce_cap_supported);
+
+struct kvm_caps kvm_caps __read_mostly = {
+	.supported_mce_cap = MCG_CTL_P | MCG_SER_P,
+};
+EXPORT_SYMBOL_GPL(kvm_caps);
 
 #define emul_to_vcpu(ctxt) \
 	((struct kvm_vcpu *)(ctxt)->vcpu)
@@ -130,19 +133,6 @@ module_param(min_timer_period_us, uint, S_IRUGO | S_IWUSR);
 
 static bool __read_mostly kvmclock_periodic_sync = true;
 module_param(kvmclock_periodic_sync, bool, S_IRUGO);
-
-bool __read_mostly kvm_has_tsc_control;
-EXPORT_SYMBOL_GPL(kvm_has_tsc_control);
-u32  __read_mostly kvm_max_guest_tsc_khz;
-EXPORT_SYMBOL_GPL(kvm_max_guest_tsc_khz);
-u8   __read_mostly kvm_tsc_scaling_ratio_frac_bits;
-EXPORT_SYMBOL_GPL(kvm_tsc_scaling_ratio_frac_bits);
-u64  __read_mostly kvm_max_tsc_scaling_ratio;
-EXPORT_SYMBOL_GPL(kvm_max_tsc_scaling_ratio);
-u64 __read_mostly kvm_default_tsc_scaling_ratio;
-EXPORT_SYMBOL_GPL(kvm_default_tsc_scaling_ratio);
-bool __read_mostly kvm_has_bus_lock_exit;
-EXPORT_SYMBOL_GPL(kvm_has_bus_lock_exit);
 
 /* tsc tolerance in parts per million - default to 1/2 of the NTP threshold */
 static u32 __read_mostly tsc_tolerance_ppm = 250;
@@ -206,8 +196,7 @@ bool __read_mostly allow_smaller_maxphyaddr = 0;
 EXPORT_SYMBOL_GPL(allow_smaller_maxphyaddr);
 
 static u64 __read_mostly host_xss;
-u64 __read_mostly supported_xss;
-EXPORT_SYMBOL_GPL(supported_xss);
+EXPORT_SYMBOL_GPL(host_xss);
 
 struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT("pf_fixed", pf_fixed),
@@ -296,8 +285,6 @@ struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
 };
 
 u64 __read_mostly host_xcr0;
-u64 __read_mostly supported_xcr0;
-EXPORT_SYMBOL_GPL(supported_xcr0);
 
 static struct kmem_cache *x86_emulator_cache;
 
@@ -2142,12 +2129,12 @@ static int set_tsc_khz(struct kvm_vcpu *vcpu, u32 user_tsc_khz, bool scale)
 
 	/* Guest TSC same frequency as host TSC? */
 	if (!scale) {
-		vcpu->arch.tsc_scaling_ratio = kvm_default_tsc_scaling_ratio;
+		vcpu->arch.tsc_scaling_ratio = kvm_caps.default_tsc_scaling_ratio;
 		return 0;
 	}
 
 	/* TSC scaling supported? */
-	if (!kvm_has_tsc_control) {
+	if (!kvm_caps.has_tsc_control) {
 		if (user_tsc_khz > tsc_khz) {
 			vcpu->arch.tsc_catchup = 1;
 			vcpu->arch.tsc_always_catchup = 1;
@@ -2159,10 +2146,10 @@ static int set_tsc_khz(struct kvm_vcpu *vcpu, u32 user_tsc_khz, bool scale)
 	}
 
 	/* TSC scaling required  - calculate ratio */
-	ratio = mul_u64_u32_div(1ULL << kvm_tsc_scaling_ratio_frac_bits,
+	ratio = mul_u64_u32_div(1ULL << kvm_caps.tsc_scaling_ratio_frac_bits,
 				user_tsc_khz, tsc_khz);
 
-	if (ratio == 0 || ratio >= kvm_max_tsc_scaling_ratio) {
+	if (ratio == 0 || ratio >= kvm_caps.max_tsc_scaling_ratio) {
 		pr_warn_ratelimited("Invalid TSC scaling ratio - virtual-tsc-khz=%u\n",
 			            user_tsc_khz);
 		return -1;
@@ -2180,7 +2167,7 @@ static int kvm_set_tsc_khz(struct kvm_vcpu *vcpu, u32 user_tsc_khz)
 	/* tsc_khz can be zero if TSC calibration fails */
 	if (user_tsc_khz == 0) {
 		/* set tsc_scaling_ratio to a safe value */
-		vcpu->arch.tsc_scaling_ratio = kvm_default_tsc_scaling_ratio;
+		vcpu->arch.tsc_scaling_ratio = kvm_caps.default_tsc_scaling_ratio;
 		return -1;
 	}
 
@@ -2255,11 +2242,11 @@ static void kvm_track_tsc_matching(struct kvm_vcpu *vcpu)
  * (frac) represent the fractional part, ie. ratio represents a fixed
  * point number (mult + frac * 2^(-N)).
  *
- * N equals to kvm_tsc_scaling_ratio_frac_bits.
+ * N equals to kvm_caps.tsc_scaling_ratio_frac_bits.
  */
 static inline u64 __scale_tsc(u64 ratio, u64 tsc)
 {
-	return mul_u64_u64_shr(tsc, ratio, kvm_tsc_scaling_ratio_frac_bits);
+	return mul_u64_u64_shr(tsc, ratio, kvm_caps.tsc_scaling_ratio_frac_bits);
 }
 
 u64 kvm_scale_tsc(struct kvm_vcpu *vcpu, u64 tsc)
@@ -2267,7 +2254,7 @@ u64 kvm_scale_tsc(struct kvm_vcpu *vcpu, u64 tsc)
 	u64 _tsc = tsc;
 	u64 ratio = vcpu->arch.tsc_scaling_ratio;
 
-	if (ratio != kvm_default_tsc_scaling_ratio)
+	if (ratio != kvm_caps.default_tsc_scaling_ratio)
 		_tsc = __scale_tsc(ratio, tsc);
 
 	return _tsc;
@@ -2416,7 +2403,7 @@ static inline void adjust_tsc_offset_guest(struct kvm_vcpu *vcpu,
 
 static inline void adjust_tsc_offset_host(struct kvm_vcpu *vcpu, s64 adjustment)
 {
-	if (vcpu->arch.tsc_scaling_ratio != kvm_default_tsc_scaling_ratio)
+	if (vcpu->arch.tsc_scaling_ratio != kvm_caps.default_tsc_scaling_ratio)
 		WARN_ON(adjustment < 0);
 	adjustment = kvm_scale_tsc(vcpu, (u64) adjustment);
 	adjust_tsc_offset_guest(vcpu, adjustment);
@@ -2794,7 +2781,7 @@ static int kvm_guest_time_update(struct kvm_vcpu *v)
 
 	/* With all the info we got, fill in the values */
 
-	if (kvm_has_tsc_control)
+	if (kvm_caps.has_tsc_control)
 		tgt_tsc_khz = kvm_scale_tsc(v, tgt_tsc_khz);
 
 	if (unlikely(vcpu->hw_tsc_khz != tgt_tsc_khz)) {
@@ -3239,7 +3226,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		 * IA32_XSS[bit 8]. Guests have to use RDMSR/WRMSR rather than
 		 * XSAVES/XRSTORS to save/restore PT MSRs.
 		 */
-		if (data & ~supported_xss)
+		if (data & ~kvm_caps.supported_xss)
 			return 1;
 		vcpu->arch.ia32_xss = data;
 		kvm_update_cpuid_runtime(vcpu);
@@ -3905,7 +3892,7 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		r = boot_cpu_has(X86_FEATURE_XSAVE);
 		break;
 	case KVM_CAP_TSC_CONTROL:
-		r = kvm_has_tsc_control;
+		r = kvm_caps.has_tsc_control;
 		break;
 	case KVM_CAP_X2APIC_API:
 		r = KVM_X2APIC_API_VALID_FLAGS;
@@ -3937,7 +3924,6 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		break;
 	}
 	return r;
-
 }
 
 long kvm_arch_dev_ioctl(struct file *filp,
@@ -3995,8 +3981,8 @@ long kvm_arch_dev_ioctl(struct file *filp,
 	}
 	case KVM_X86_GET_MCE_CAP_SUPPORTED:
 		r = -EFAULT;
-		if (copy_to_user(argp, &kvm_mce_cap_supported,
-				 sizeof(kvm_mce_cap_supported)))
+		if (copy_to_user(argp, &kvm_caps.supported_mce_cap,
+				 sizeof(kvm_caps.supported_mce_cap)))
 			goto out;
 		r = 0;
 		break;
@@ -4270,7 +4256,7 @@ static int kvm_vcpu_ioctl_x86_setup_mce(struct kvm_vcpu *vcpu,
 	r = -EINVAL;
 	if (!bank_num || bank_num > KVM_MAX_MCE_BANKS)
 		goto out;
-	if (mcg_cap & ~(kvm_mce_cap_supported | 0xff | 0xff0000))
+	if (mcg_cap & ~(kvm_caps.supported_mce_cap | 0xff | 0xff0000))
 		goto out;
 	r = 0;
 	vcpu->arch.mcg_cap = mcg_cap;
@@ -4565,7 +4551,7 @@ static int kvm_vcpu_ioctl_x86_set_xsave(struct kvm_vcpu *vcpu,
 {
 	return fpu_copy_uabi_to_guest_fpstate(&vcpu->arch.guest_fpu,
 			guest_xsave->region,
-			supported_xcr0, &vcpu->arch.pkru);
+			kvm_caps.supported_xcr0, &vcpu->arch.pkru);
 }
 
 static void kvm_vcpu_ioctl_x86_get_xcrs(struct kvm_vcpu *vcpu,
@@ -4933,8 +4919,8 @@ long kvm_arch_vcpu_ioctl(struct file *filp,
 		r = -EINVAL;
 		user_tsc_khz = (u32)arg;
 
-		if (kvm_has_tsc_control &&
-		    user_tsc_khz >= kvm_max_guest_tsc_khz)
+		if (kvm_caps.has_tsc_control &&
+		    user_tsc_khz >= kvm_caps.max_guest_tsc_khz)
 			goto out;
 
 		if (user_tsc_khz == 0)
@@ -7746,7 +7732,7 @@ static void kvm_hyperv_tsc_notifier(void)
 	/* TSC frequency always matches when on Hyper-V */
 	for_each_present_cpu(cpu)
 		per_cpu(cpu_tsc_khz, cpu) = tsc_khz;
-	kvm_max_guest_tsc_khz = tsc_khz;
+	kvm_caps.max_guest_tsc_khz = tsc_khz;
 
 	list_for_each_entry(kvm, &vm_list, vm_list) {
 		struct kvm_arch *ka = &kvm->arch;
@@ -8059,7 +8045,7 @@ int kvm_arch_init(void *opaque)
 
 	if (boot_cpu_has(X86_FEATURE_XSAVE)) {
 		host_xcr0 = xgetbv(XCR_XFEATURE_ENABLED_MASK);
-		supported_xcr0 = host_xcr0 & KVM_SUPPORTED_XCR0;
+		kvm_caps.supported_xcr0 = host_xcr0 & KVM_SUPPORTED_XCR0;
 	}
 
 	kvm_lapic_init();
@@ -10357,13 +10343,13 @@ int kvm_arch_hardware_setup(void *opaque)
 	memcpy(&kvm_x86_ops, ops->runtime_ops, sizeof(kvm_x86_ops));
 
 	if (!kvm_cpu_cap_has(X86_FEATURE_XSAVES))
-		supported_xss = 0;
+		kvm_caps.supported_xss = 0;
 
 #define __kvm_cpu_cap_has(UNUSED_, f) kvm_cpu_cap_has(f)
 	cr4_reserved_bits = __cr4_reserved_bits(__kvm_cpu_cap_has, UNUSED_);
 #undef __kvm_cpu_cap_has
 
-	if (kvm_has_tsc_control) {
+	if (kvm_caps.has_tsc_control) {
 		/*
 		 * Make sure the user can only configure tsc_khz values that
 		 * fit into a signed integer.
@@ -10371,10 +10357,10 @@ int kvm_arch_hardware_setup(void *opaque)
 		 * be 1 on all machines.
 		 */
 		u64 max = min(0x7fffffffULL,
-			      __scale_tsc(kvm_max_tsc_scaling_ratio, tsc_khz));
-		kvm_max_guest_tsc_khz = max;
+			      __scale_tsc(kvm_caps.max_tsc_scaling_ratio, tsc_khz));
+		kvm_caps.max_guest_tsc_khz = max;
 
-		kvm_default_tsc_scaling_ratio = 1ULL << kvm_tsc_scaling_ratio_frac_bits;
+		kvm_caps.default_tsc_scaling_ratio = 1ULL << kvm_caps.tsc_scaling_ratio_frac_bits;
 	}
 
 	kvm_init_msr_list();

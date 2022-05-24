@@ -169,7 +169,7 @@ static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 		vcpu->arch.guest_supported_xcr0 = 0;
 	else
 		vcpu->arch.guest_supported_xcr0 =
-			(best->eax | ((u64)best->edx << 32)) & supported_xcr0;
+			(best->eax | ((u64)best->edx << 32)) & kvm_caps.supported_xcr0;
 
 	/*
 	 * Bits 127:0 of the allowed SECS.ATTRIBUTES (CPUID.0x12.0x1) enumerate
@@ -762,11 +762,11 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 		}
 		break;
 	case 0xd:
-		entry->eax &= supported_xcr0;
-		entry->ebx = xstate_required_size(supported_xcr0, false);
+		entry->eax &= kvm_caps.supported_xcr0;
+		entry->ebx = xstate_required_size(kvm_caps.supported_xcr0, false);
 		entry->ecx = entry->ebx;
-		entry->edx &= supported_xcr0 >> 32;
-		if (!supported_xcr0)
+		entry->edx &= kvm_caps.supported_xcr0 >> 32;
+		if (!kvm_caps.supported_xcr0)
 			break;
 
 		entry = do_host_cpuid(array, function, 1);
@@ -775,20 +775,20 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 
 		cpuid_entry_override(entry, CPUID_D_1_EAX);
 		if (entry->eax & (F(XSAVES)|F(XSAVEC)))
-			entry->ebx = xstate_required_size(supported_xcr0 | supported_xss,
+			entry->ebx = xstate_required_size(kvm_caps.supported_xcr0 | kvm_caps.supported_xss,
 							  true);
 		else {
-			WARN_ON_ONCE(supported_xss != 0);
+			WARN_ON_ONCE(kvm_caps.supported_xss != 0);
 			entry->ebx = 0;
 		}
-		entry->ecx &= supported_xss;
-		entry->edx &= supported_xss >> 32;
+		entry->ecx &= kvm_caps.supported_xss;
+		entry->edx &= kvm_caps.supported_xss >> 32;
 
 		for (i = 2; i < 64; ++i) {
 			bool s_state;
-			if (supported_xcr0 & BIT_ULL(i))
+			if (kvm_caps.supported_xcr0 & BIT_ULL(i))
 				s_state = false;
-			else if (supported_xss & BIT_ULL(i))
+			else if (kvm_caps.supported_xss & BIT_ULL(i))
 				s_state = true;
 			else
 				continue;
@@ -802,7 +802,7 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 			 * invalid sub-leafs.  Only valid sub-leafs should
 			 * reach this point, and they should have a non-zero
 			 * save state size.  Furthermore, check whether the
-			 * processor agrees with supported_xcr0/supported_xss
+			 * processor agrees with kvm_caps.supported_xcr0/kvm_caps.supported_xss
 			 * on whether this is an XCR0- or IA32_XSS-managed area.
 			 */
 			if (WARN_ON_ONCE(!entry->eax || (entry->ecx & 0x1) != s_state)) {

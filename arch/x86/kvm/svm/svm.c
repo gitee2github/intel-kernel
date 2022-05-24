@@ -897,7 +897,7 @@ static __init void svm_set_cpu_caps(void)
 {
 	kvm_set_cpu_caps();
 
-	supported_xss = 0;
+	kvm_caps.supported_xss = 0;
 
 	/* CPUID 0x80000001 and 0x8000000A (SVM features) */
 	if (nested) {
@@ -937,7 +937,7 @@ static __init int svm_hardware_setup(void)
 
 	init_msrpm_offsets();
 
-	supported_xcr0 &= ~(XFEATURE_MASK_BNDREGS | XFEATURE_MASK_BNDCSR);
+	kvm_caps.supported_xcr0 &= ~(XFEATURE_MASK_BNDREGS | XFEATURE_MASK_BNDCSR);
 
 	if (boot_cpu_has(X86_FEATURE_NX))
 		kvm_enable_efer_bits(EFER_NX);
@@ -946,9 +946,9 @@ static __init int svm_hardware_setup(void)
 		kvm_enable_efer_bits(EFER_FFXSR);
 
 	if (boot_cpu_has(X86_FEATURE_TSCRATEMSR)) {
-		kvm_has_tsc_control = true;
-		kvm_max_tsc_scaling_ratio = TSC_RATIO_MAX;
-		kvm_tsc_scaling_ratio_frac_bits = 32;
+		kvm_caps.has_tsc_control = true;
+		kvm_caps.max_tsc_scaling_ratio = TSC_RATIO_MAX;
+		kvm_caps.tsc_scaling_ratio_frac_bits = 32;
 	}
 
 	/* Check for pause filtering support */
@@ -1263,7 +1263,6 @@ static void init_vmcb(struct vcpu_svm *svm)
 	vmcb_mark_all_dirty(svm->vmcb);
 
 	enable_gif(svm);
-
 }
 
 static void svm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
