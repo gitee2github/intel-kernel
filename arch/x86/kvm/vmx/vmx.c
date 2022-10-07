@@ -4525,7 +4525,7 @@ static void ept_set_mmio_spte_mask(void)
 
 static inline int vmx_get_pid_table_order(struct kvm *kvm)
 {
-	return get_order(kvm->arch.max_vcpu_ids * sizeof(*to_kvm_vmx(kvm)->pid_table));
+	return get_order(to_kvm_vmx(kvm)->max_vcpu_ids * sizeof(*to_kvm_vmx(kvm)->pid_table));
 }
 
 static int vmx_alloc_ipiv_pid_table(struct kvm *kvm)
@@ -4547,8 +4547,16 @@ static int vmx_alloc_ipiv_pid_table(struct kvm *kvm)
 	return 0;
 }
 
-static int vmx_vcpu_precreate(struct kvm *kvm)
+static int vmx_vcpu_precreate(struct kvm *kvm, unsigned int id)
 {
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	if (!kvm_vmx->max_vcpu_ids)
+		kvm_vmx->max_vcpu_ids = KVM_MAX_VCPU_ID;
+
+	if (id >= kvm_vmx->max_vcpu_ids)
+		return -EINVAL;
+
 	return vmx_alloc_ipiv_pid_table(kvm);
 }
 
@@ -4598,7 +4606,7 @@ static void init_vmcs(struct vcpu_vmx *vmx)
 
 	if (vmx_can_use_ipiv(&vmx->vcpu)) {
 		vmcs_write64(PID_POINTER_TABLE, __pa(kvm_vmx->pid_table));
-		vmcs_write16(LAST_PID_POINTER_INDEX, kvm->arch.max_vcpu_ids - 1);
+		vmcs_write16(LAST_PID_POINTER_INDEX, to_kvm_vmx(kvm)->max_vcpu_ids - 1);
 	}
 
 	if (!kvm_pause_in_guest(kvm)) {
@@ -8029,6 +8037,20 @@ static void vmx_vm_destroy(struct kvm *kvm)
 	free_pages((unsigned long)kvm_vmx->pid_table, vmx_get_pid_table_order(kvm));
 }
 
+static u32 vmx_get_max_vcpu_ids(struct kvm *kvm)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	return kvm_vmx->max_vcpu_ids;
+}
+
+static void vmx_set_max_vcpu_ids(struct kvm *kvm, u32 max_vcpu_ids)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	kvm_vmx->max_vcpu_ids = max_vcpu_ids;
+}
+
 static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.hardware_unsetup = hardware_unsetup,
 
@@ -8041,7 +8063,6 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.vm_init = vmx_vm_init,
 	.vm_destroy = vmx_vm_destroy,
 
-	.vcpu_precreate = vmx_vcpu_precreate,
 	.vcpu_create = vmx_create_vcpu,
 	.vcpu_free = vmx_free_vcpu,
 	.vcpu_reset = vmx_vcpu_reset,
@@ -8159,6 +8180,13 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.migrate_timers = vmx_migrate_timers,
 
 	.msr_filter_changed = vmx_msr_filter_changed,
+};
+
+static struct kvm_x86_extra_ops vmx_x86_extra_ops __initdata = {
+	.vcpu_precreate = vmx_vcpu_precreate,
+
+	.get_max_vcpu_ids = vmx_get_max_vcpu_ids,
+	.set_max_vcpu_ids = vmx_set_max_vcpu_ids,
 };
 
 static __init int hardware_setup(void)
@@ -8351,6 +8379,7 @@ static struct kvm_x86_init_ops vmx_init_ops __initdata = {
 	.intel_pt_intr_in_guest = vmx_pt_mode_is_host_guest,
 
 	.runtime_ops = &vmx_x86_ops,
+	.extra_ops = &vmx_x86_extra_ops,
 };
 
 static void vmx_cleanup_l1d_flush(void)

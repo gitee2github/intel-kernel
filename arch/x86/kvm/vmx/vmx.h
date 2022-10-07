@@ -357,6 +357,12 @@ struct kvm_vmx {
 
 	enum ept_pointers_status ept_pointers_match;
 	spinlock_t ept_pointer_lock;
+	/*
+	 * VM-scope maximum vCPU ID. Used to determine the size of structures
+	 * that increase along with the maximum vCPU ID, in which case, using
+	 * the global KVM_MAX_VCPU_ID may lead to significant memory waste.
+	 */
+	u32 max_vcpu_ids;
 	/* Posted Interrupt Descriptor (PID) table for IPI virtualization */
 	u64 *pid_table;
 };

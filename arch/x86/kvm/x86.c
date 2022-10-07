@@ -118,6 +118,9 @@ static int sync_regs(struct kvm_vcpu *vcpu);
 struct kvm_x86_ops kvm_x86_ops __read_mostly;
 EXPORT_SYMBOL_GPL(kvm_x86_ops);
 
+struct kvm_x86_extra_ops kvm_x86_extra_ops __read_mostly;
+EXPORT_SYMBOL_GPL(kvm_x86_extra_ops);
+
 static bool __read_mostly ignore_msrs = 0;
 module_param(ignore_msrs, bool, S_IRUGO | S_IWUSR);
 
@@ -5364,15 +5367,23 @@ split_irqchip_unlock:
 	}
 #endif
 	case KVM_CAP_MAX_VCPU_ID:
+	{
+		u32 max_vcpu_ids;
+
+		r = -ENOTSUPP;
+		if (!kvm_x86_extra_ops.get_max_vcpu_ids || !kvm_x86_extra_ops.set_max_vcpu_ids)
+			break;
+
 		r = -EINVAL;
 		if (cap->args[0] > KVM_MAX_VCPU_ID)
 			break;
 
 		mutex_lock(&kvm->lock);
-		if (kvm->arch.max_vcpu_ids == cap->args[0]) {
+		max_vcpu_ids = kvm_x86_extra_ops.get_max_vcpu_ids(kvm);
+		if (max_vcpu_ids == cap->args[0]) {
 			r = 0;
-		} else if (!kvm->arch.max_vcpu_ids) {
-			kvm->arch.max_vcpu_ids = cap->args[0];
+		} else if (!max_vcpu_ids) {
+			kvm_x86_extra_ops.set_max_vcpu_ids(kvm, cap->args[0]);
 			r = 0;
 		}
 		mutex_unlock(&kvm->lock);
@@ -10043,13 +10054,8 @@ int kvm_arch_vcpu_precreate(struct kvm *kvm, unsigned int id)
 		pr_warn_once("kvm: SMP vm created on host with unstable TSC; "
 			     "guest TSC will not be reliable\n");
 
-	if (!kvm->arch.max_vcpu_ids)
-		kvm->arch.max_vcpu_ids = KVM_MAX_VCPU_ID;
-
-	if (id >= kvm->arch.max_vcpu_ids)
-		return -EINVAL;
-
-	return kvm_x86_ops.vcpu_precreate ? kvm_x86_ops.vcpu_precreate(kvm) : 0;
+	return kvm_x86_extra_ops.vcpu_precreate ?
+	       kvm_x86_extra_ops.vcpu_precreate(kvm, id) : 0;
 }
 
 int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
@@ -10401,6 +10407,10 @@ int kvm_arch_hardware_setup(void *opaque)
 		return r;
 
 	memcpy(&kvm_x86_ops, ops->runtime_ops, sizeof(kvm_x86_ops));
+	if (ops->extra_ops)
+		memcpy(&kvm_x86_extra_ops, ops->extra_ops, sizeof(kvm_x86_extra_ops));
+	else
+		memset(&kvm_x86_extra_ops, 0, sizeof(kvm_x86_extra_ops));
 
 	if (!kvm_cpu_cap_has(X86_FEATURE_XSAVES))
 		supported_xss = 0;
