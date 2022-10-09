@@ -4616,7 +4616,7 @@ static void init_vmcs(struct vcpu_vmx *vmx)
 	}
 
 	if (kvm_notify_vmexit_enabled(vmx->vcpu.kvm))
-		vmcs_write32(NOTIFY_WINDOW, vmx->vcpu.kvm->arch.notify_window);
+		vmcs_write32(NOTIFY_WINDOW, to_kvm_vmx(vmx->vcpu.kvm)->notify_window);
 
 	vmcs_write32(PAGE_FAULT_ERROR_CODE_MASK, 0);
 	vmcs_write32(PAGE_FAULT_ERROR_CODE_MATCH, 0);
@@ -5963,8 +5963,6 @@ static int handle_notify(struct kvm_vcpu *vcpu)
 	unsigned long exit_qual = vmx_get_exit_qual(vcpu);
 	bool context_invalid = exit_qual & NOTIFY_VM_CONTEXT_INVALID;
 
-	++vcpu->stat.notify_window_exits;
-
 	/*
 	 * Notify VM exit happened while executing iret from NMI,
 	 * "blocked by NMI" bit has to be set before next VM entry.
@@ -5973,7 +5971,7 @@ static int handle_notify(struct kvm_vcpu *vcpu)
 		vmcs_set_bits(GUEST_INTERRUPTIBILITY_INFO,
 			      GUEST_INTR_STATE_NMI);
 
-	if (vcpu->kvm->arch.notify_vmexit_flags & KVM_X86_NOTIFY_VMEXIT_USER ||
+	if (to_kvm_vmx(vcpu->kvm)->notify_vmexit_flags & KVM_X86_NOTIFY_VMEXIT_USER ||
 	    context_invalid) {
 		vcpu->run->exit_reason = KVM_EXIT_NOTIFY;
 		vcpu->run->notify.flags = context_invalid ?
@@ -8051,6 +8049,48 @@ static void vmx_set_max_vcpu_ids(struct kvm *kvm, u32 max_vcpu_ids)
 	kvm_vmx->max_vcpu_ids = max_vcpu_ids;
 }
 
+static bool vmx_get_triple_fault_event(struct kvm *kvm)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	return kvm_vmx->triple_fault_event;
+}
+
+static void vmx_set_triple_fault_event(struct kvm *kvm, bool enable)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	kvm_vmx->triple_fault_event = enable;
+}
+
+static u32 vmx_get_notify_window(struct kvm *kvm)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	return kvm_vmx->notify_window;
+}
+
+static void vmx_set_notify_window(struct kvm *kvm, u32 notify_window)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	kvm_vmx->notify_window = notify_window;
+}
+
+static u32 vmx_get_notify_vmexit_flags(struct kvm *kvm)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	return kvm_vmx->notify_vmexit_flags;
+}
+
+static void vmx_set_notify_vmexit_flags(struct kvm *kvm, u32 notify_vmexit_flags)
+{
+	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
+
+	kvm_vmx->notify_vmexit_flags = notify_vmexit_flags;
+}
+
 static struct kvm_x86_ops vmx_x86_ops __initdata = {
 	.hardware_unsetup = hardware_unsetup,
 
@@ -8187,6 +8227,15 @@ static struct kvm_x86_extra_ops vmx_x86_extra_ops __initdata = {
 
 	.get_max_vcpu_ids = vmx_get_max_vcpu_ids,
 	.set_max_vcpu_ids = vmx_set_max_vcpu_ids,
+
+	.get_triple_fault_event = vmx_get_triple_fault_event,
+	.set_triple_fault_event = vmx_set_triple_fault_event,
+
+	.get_notify_window = vmx_get_notify_window,
+	.set_notify_window = vmx_set_notify_window,
+
+	.get_notify_vmexit_flags = vmx_get_notify_vmexit_flags,
+	.set_notify_vmexit_flags = vmx_set_notify_vmexit_flags,
 };
 
 static __init int hardware_setup(void)

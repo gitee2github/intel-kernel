@@ -365,6 +365,10 @@ struct kvm_vmx {
 	u32 max_vcpu_ids;
 	/* Posted Interrupt Descriptor (PID) table for IPI virtualization */
 	u64 *pid_table;
+
+	bool triple_fault_event;
+	u32 notify_window;
+	u32 notify_vmexit_flags;
 };
 
 bool nested_vmx_allowed(struct kvm_vcpu *vcpu);
@@ -490,6 +494,11 @@ static inline struct kvm_vmx *to_kvm_vmx(struct kvm *kvm)
 static inline struct vcpu_vmx *to_vmx(struct kvm_vcpu *vcpu)
 {
 	return container_of(vcpu, struct vcpu_vmx, vcpu);
+}
+
+static inline bool kvm_notify_vmexit_enabled(struct kvm *kvm)
+{
+	return to_kvm_vmx(kvm)->notify_vmexit_flags & KVM_X86_NOTIFY_VMEXIT_ENABLED;
 }
 
 static inline unsigned long vmx_get_exit_qual(struct kvm_vcpu *vcpu)

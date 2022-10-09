@@ -245,7 +245,6 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	VCPU_STAT("halt_poll_fail_ns", halt_poll_fail_ns),
 	VCPU_STAT("preemption_reported", preemption_reported),
 	VCPU_STAT("preemption_other", preemption_other),
-	VCPU_STAT("notify_window_exits", notify_window_exits),
 	VM_STAT("mmu_shadow_zapped", mmu_shadow_zapped),
 	VM_STAT("mmu_pte_write", mmu_pte_write),
 	VM_STAT("mmu_pde_zapped", mmu_pde_zapped),
@@ -4434,7 +4433,8 @@ static void kvm_vcpu_ioctl_x86_get_vcpu_events(struct kvm_vcpu *vcpu,
 			 | KVM_VCPUEVENT_VALID_SMM);
 	if (vcpu->kvm->arch.exception_payload_enabled)
 		events->flags |= KVM_VCPUEVENT_VALID_PAYLOAD;
-	if (vcpu->kvm->arch.triple_fault_event) {
+	if (kvm_x86_extra_ops.get_triple_fault_event &&
+	    kvm_x86_extra_ops.get_triple_fault_event(vcpu->kvm)) {
 		events->triple_fault.pending = kvm_test_request(KVM_REQ_TRIPLE_FAULT, vcpu);
 		events->flags |= KVM_VCPUEVENT_VALID_TRIPLE_FAULT;
 	}
@@ -4531,7 +4531,9 @@ static int kvm_vcpu_ioctl_x86_set_vcpu_events(struct kvm_vcpu *vcpu,
 	}
 
 	if (events->flags & KVM_VCPUEVENT_VALID_TRIPLE_FAULT) {
-		if (!vcpu->kvm->arch.triple_fault_event)
+		if (!kvm_x86_extra_ops.get_triple_fault_event)
+			return -ENOTSUPP;
+		if (!kvm_x86_extra_ops.get_triple_fault_event(vcpu->kvm))
 			return -EINVAL;
 		if (events->triple_fault.pending)
 			kvm_make_request(KVM_REQ_TRIPLE_FAULT, vcpu);
@@ -5342,7 +5344,11 @@ split_irqchip_unlock:
 		r = 0;
 		break;
 	case KVM_CAP_X86_TRIPLE_FAULT_EVENT:
-		kvm->arch.triple_fault_event = cap->args[0];
+		if (!kvm_x86_extra_ops.set_triple_fault_event) {
+			r = -ENOTSUPP;
+			break;
+		}
+		kvm_x86_extra_ops.set_triple_fault_event(kvm, cap->args[0]);
 		r = 0;
 		break;
 	case KVM_CAP_X86_USER_SPACE_MSR:
@@ -5388,6 +5394,7 @@ split_irqchip_unlock:
 		}
 		mutex_unlock(&kvm->lock);
 		break;
+	}
 	case KVM_CAP_X86_BUS_LOCK_EXIT:
 		r = -EINVAL;
 		if (cap->args[0] & ~KVM_BUS_LOCK_DETECTION_VALID_MODE)
@@ -5410,10 +5417,15 @@ split_irqchip_unlock:
 			break;
 		if (!((u32)cap->args[0] & KVM_X86_NOTIFY_VMEXIT_ENABLED))
 			break;
+		if (!kvm_x86_extra_ops.set_notify_window ||
+		    !kvm_x86_extra_ops.set_notify_vmexit_flags) {
+			r = -ENOTSUPP;
+			break;
+		}
 		mutex_lock(&kvm->lock);
 		if (!kvm->created_vcpus) {
-			kvm->arch.notify_window = cap->args[0] >> 32;
-			kvm->arch.notify_vmexit_flags = (u32)cap->args[0];
+			kvm_x86_extra_ops.set_notify_window(kvm, cap->args[0] >> 32);
+			kvm_x86_extra_ops.set_notify_vmexit_flags(kvm, (u32)cap->args[0]);
 			r = 0;
 		}
 		mutex_unlock(&kvm->lock);

@@ -2204,7 +2204,7 @@ static void prepare_vmcs02_constant_state(struct vcpu_vmx *vmx)
 		vmcs_write64(ENCLS_EXITING_BITMAP, -1ull);
 
 	if (kvm_notify_vmexit_enabled(kvm))
-		vmcs_write32(NOTIFY_WINDOW, kvm->arch.notify_window);
+		vmcs_write32(NOTIFY_WINDOW, to_kvm_vmx(kvm)->notify_window);
 
 	/*
 	 * Set the MSR load/store lists to match L0's settings.  Only the

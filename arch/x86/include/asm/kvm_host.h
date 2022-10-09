@@ -1008,12 +1008,7 @@ struct kvm_arch {
 	bool guest_can_read_msr_platform_info;
 	bool exception_payload_enabled;
 
-	bool triple_fault_event;
-
 	bool bus_lock_detection_enabled;
-
-	u32 notify_window;
-	u32 notify_vmexit_flags;
 
 	/* Guest can access the SGX PROVISIONKEY. */
 	bool sgx_provisioning_allowed;
@@ -1101,7 +1096,6 @@ struct kvm_vcpu_stat {
 	u64 preemption_reported;
 	u64 preemption_other;
 	u64 preemption_timer_exits;
-	u64 notify_window_exits;
 };
 
 struct x86_instruction_info;
@@ -1333,6 +1327,15 @@ struct kvm_x86_extra_ops {
 
 	u32 (*get_max_vcpu_ids)(struct kvm *kvm);
 	void (*set_max_vcpu_ids)(struct kvm *kvm, u32 max_vcpu_ids);
+
+	bool (*get_triple_fault_event)(struct kvm *kvm);
+	void (*set_triple_fault_event)(struct kvm *kvm, bool enable);
+	
+	u32 (*get_notify_window)(struct kvm *kvm);
+	void (*set_notify_window)(struct kvm *kvm, u32 notify_window);
+
+	u32 (*get_notify_vmexit_flags)(struct kvm *kvm);
+	void (*set_notify_vmexit_flags)(struct kvm *kvm, u32 notify_vmexit_flags);
 };
 
 struct kvm_x86_nested_ops {
